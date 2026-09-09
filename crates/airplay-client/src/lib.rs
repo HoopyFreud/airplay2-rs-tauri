@@ -44,7 +44,7 @@ mod raop_connection;
 mod stats;
 
 pub use client::AirPlayClient;
-pub use connection::{Connection, StreamingParams};
+pub use connection::{Connection, PersistentIdentity, StreamingParams};
 pub use raop_connection::RaopConnection;
 pub use group::{DeviceGroup, GroupMember};
 pub use playback::{PlaybackState, PlaybackInfo};
