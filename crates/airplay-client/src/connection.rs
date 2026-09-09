@@ -6,8 +6,6 @@ use airplay_core::features::AuthMethod;
 use airplay_rtsp::{RtspConnection, RtspSession, SessionState, RtspRequest};
 use airplay_pairing::{PairingSession, PairVerify, PairSetup, ControllerIdentity};
 use airplay_crypto::ed25519::IdentityKeyPair;
-use std::path::PathBuf;
-use std::fs;
 // Timing imports reserved for future use
 // use airplay_timing::{TimingProtocol, NtpTimingClient, PtpClient};
 use airplay_audio::{AudioStreamer, AudioDecoder, LiveAudioDecoder, RtpSender, RtpReceiver, EqConfig, EqParams};
