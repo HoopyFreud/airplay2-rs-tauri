@@ -235,7 +235,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut connections: Vec<Connection> = Vec::new();
     for (i, device) in devices.iter().enumerate() {
         let connect_start = Instant::now();
-        let conn = Connection::connect_auto(device.clone(), config.clone(), "3939").await?;
+        let conn = Connection::connect_with_pin(device.clone(), config.clone(), "3939").await?;
         println!("  Device {} connected + paired in {:.1}s", i + 1, connect_start.elapsed().as_secs_f64());
         connections.push(conn);
     }

@@ -209,12 +209,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\n--- Connecting (AirPlay 2) ---");
         let mut conn = if let Some(ref pin) = pin_arg {
             println!("Using PIN pairing (HomeKit Normal) with PIN: {}", pin);
-            Connection::connect_with_pin_pairing(device, config, pin).await?
-        } else if force_transient {
+            Connection::connect_with_pin_pairing(device, config, pin).await?.0
+        } else {
             println!("Forcing transient pairing (--force-transient)");
             Connection::connect_with_pin(device, config, "3939").await?
-        } else {
-            Connection::connect_auto(device, config, "3939").await?
         };
         if render_delay_ms > 0 {
             conn.set_render_delay_ms(render_delay_ms);

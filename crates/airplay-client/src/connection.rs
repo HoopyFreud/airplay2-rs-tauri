@@ -42,7 +42,7 @@ fn generate_device_id() -> String {
 
 /// Persisted sender identity for pair-verify after initial pair-setup.
 #[derive(serde::Serialize, serde::Deserialize)]
-struct PersistentIdentity {
+pub struct PersistentIdentity {
     device_id: String,
     dacp_id: String,
     ed25519_secret: Vec<u8>,
@@ -53,30 +53,8 @@ struct PersistentIdentity {
 }
 
 impl PersistentIdentity {
-    /// Find identity file for a target device.
-    fn identity_file_for(target_device_id: &str) -> PathBuf {
-        let suffix = target_device_id.replace(":", "").to_lowercase();
-        PathBuf::from(format!(".airplay_sender_identity_{}.json", suffix))
-    }
-
-    /// Load identity for a target device if it exists.
-    fn load_for_device(target_device_id: &str) -> Option<Self> {
-        let path = Self::identity_file_for(target_device_id);
-        if !path.exists() {
-            return None;
-        }
-        let data = fs::read_to_string(&path).ok()?;
-        let identity: Self = serde_json::from_str(&data).ok()?;
-        // Verify we have the essential fields for pair-verify
-        if identity.ed25519_secret.len() != 32 {
-            return None;
-        }
-        info!("Loaded persisted identity from {}", path.display());
-        Some(identity)
-    }
-
     /// Convert to ControllerIdentity for pair-verify.
-    fn to_controller(&self) -> Option<ControllerIdentity> {
+    pub fn to_controller(&self) -> Option<ControllerIdentity> {
         if self.ed25519_secret.len() != 32 {
             return None;
         }
@@ -86,7 +64,7 @@ impl PersistentIdentity {
     }
 
     /// Get server LTPK as array if available.
-    fn server_ltpk_array(&self) -> Option<[u8; 32]> {
+    pub fn server_ltpk_array(&self) -> Option<[u8; 32]> {
         let ltpk = self.server_ltpk.as_ref()?;
         if ltpk.len() != 32 {
             return None;
@@ -97,7 +75,7 @@ impl PersistentIdentity {
     }
 
     /// Create a new identity from a ControllerIdentity and optional server info.
-    fn from_controller(
+    pub fn from_controller(
         controller: &ControllerIdentity,
         target_device_id: &str,
         server_ltpk: Option<[u8; 32]>,
@@ -113,29 +91,6 @@ impl PersistentIdentity {
             server_ltpk: server_ltpk.map(|pk| pk.to_vec()),
             server_identifier: server_identifier.map(|id| String::from_utf8_lossy(id).to_string()),
             pair_verify_id: target_device_id.to_string(),
-        }
-    }
-
-    /// Save identity for a target device.
-    fn save_for_device(&self, target_device_id: &str) -> bool {
-        let path = Self::identity_file_for(target_device_id);
-        match serde_json::to_string_pretty(self) {
-            Ok(json) => {
-                match fs::write(&path, json) {
-                    Ok(()) => {
-                        info!("Saved identity to {}", path.display());
-                        true
-                    }
-                    Err(e) => {
-                        warn!("Failed to save identity to {}: {}", path.display(), e);
-                        false
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("Failed to serialize identity: {}", e);
-                false
-            }
         }
     }
 }
@@ -346,36 +301,6 @@ impl Connection {
         })
     }
 
-    /// Create connection using persisted identity (pair-verify) if available.
-    ///
-    /// This method first checks for a saved identity from a previous pair-setup.
-    /// If found, it uses pair-verify (M1-M4) which is faster and doesn't require
-    /// a PIN. If no identity exists, falls back to transient pairing with the
-    /// provided PIN.
-    ///
-    /// Use this for devices like Apple TV that require initial pair-setup with
-    /// a one-time PIN from `/pair-pin-start`, but then allow pair-verify for
-    /// subsequent connections.
-    pub async fn connect_auto(device: Device, config: StreamConfig, fallback_pin: &str) -> Result<Self> {
-        // Check if we have a persisted identity for this device
-        let target_device_id = device.id.to_mac_string();
-        if let Some(persistent_id) = PersistentIdentity::load_for_device(&target_device_id) {
-            info!("Found persisted identity for {}, attempting pair-verify", target_device_id);
-            match Self::connect_with_pair_verify(device.clone(), config.clone(), &persistent_id).await {
-                Ok(conn) => {
-                    info!("Pair-verify successful");
-                    return Ok(conn);
-                }
-                Err(e) => {
-                    warn!("Pair-verify failed: {}, falling back to transient pairing", e);
-                }
-            }
-        }
-
-        // Fall back to transient pairing
-        Self::connect_with_pin(device, config, fallback_pin).await
-    }
-
     /// Create connection using pair-verify with a persisted identity.
     async fn connect_with_pair_verify(
         device: Device,
@@ -531,7 +456,7 @@ impl Connection {
     /// # Difference from HomeKit Transient
     /// - **Normal (HKP=3)**: User PIN, M1-M6, identity saved, for Apple TV
     /// - **Transient (HKP=4)**: PIN "3939", M1-M4 only, no persistence, for HomePod
-    pub async fn connect_with_pin_pairing(device: Device, config: StreamConfig, pin: &str) -> Result<Self> {
+    pub async fn connect_with_pin_pairing(device: Device, config: StreamConfig, pin: &str) -> Result<(Self,PersistentIdentity)> {
         let client_device_id = generate_device_id();
         debug!("Using fresh device ID for PIN pairing session: {}", client_device_id);
 
@@ -623,7 +548,6 @@ impl Connection {
             server_ltpk,
             server_identifier,
         );
-        persistent.save_for_device(&target_device_id);
 
         // 5. Pair-verify (M1-M4) to establish encrypted session
         let mut pair_verify = PairVerify::new_with_controller(&controller);
@@ -687,35 +611,32 @@ impl Connection {
 
         session.set_paired()?;
 
-        Ok(Self {
-            device,
-            rtsp,
-            session,
-            streamer: None,
-            playback_state: PlaybackState::Stopped,
-            volume: 1.0,
-            stream_config: config,
-            timing_offset: None,
-            timing_tx: None,
-            timing_task: None,
-            timing_server: None,
-            ptp_master: None,
-            ptp_master_sync_task: None,
-            ptp_master_clock_id: None,
-            control_receiver: None,
-            control_task: None,
-            events_stream: None,
-            render_delay_ms: 0,
-            eq_config: None,
-            eq_params: None,
-            stream_stats: crate::stats::StreamStats::new(),
-        })
-    }
-
-    /// Deprecated alias for `connect_with_pin_pairing`.
-    #[deprecated(since = "0.2.0", note = "Use connect_with_pin_pairing instead")]
-    pub async fn connect_with_fruit_pairing(device: Device, config: StreamConfig, pin: &str) -> Result<Self> {
-        Self::connect_with_pin_pairing(device, config, pin).await
+        Ok((
+            Self {
+                device,
+                rtsp,
+                session,
+                streamer: None,
+                playback_state: PlaybackState::Stopped,
+                volume: 1.0,
+                stream_config: config,
+                timing_offset: None,
+                timing_tx: None,
+                timing_task: None,
+                timing_server: None,
+                ptp_master: None,
+                ptp_master_sync_task: None,
+                ptp_master_clock_id: None,
+                control_receiver: None,
+                control_task: None,
+                events_stream: None,
+                render_delay_ms: 0,
+                eq_config: None,
+                eq_params: None,
+                stream_stats: crate::stats::StreamStats::new(),
+            },
+            persistent
+        ))
     }
 
     /// Complete RTSP SETUP phases (called before streaming).

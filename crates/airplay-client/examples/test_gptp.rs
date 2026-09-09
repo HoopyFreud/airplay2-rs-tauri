@@ -138,7 +138,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 1: Connect + pair
     println!("\n--- Phase 1: Connect + Pair ---");
     let connect_start = Instant::now();
-    let mut conn = Connection::connect_auto(device, config, "3939").await?;
+    let mut conn = Connection::connect_with_pin(device, config, "3939").await?;
     println!("Connected + paired in {:.1}s", connect_start.elapsed().as_secs_f64());
 
     // Phase 2: SETUP (triggers BMCA yield flow)

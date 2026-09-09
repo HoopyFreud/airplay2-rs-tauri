@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use std::path::Path;
 use std::net::UdpSocket;
 use std::time::Duration;
+use crate::connection::PersistentIdentity;
 use crate::{Connection, DeviceGroup, PlaybackState, EventHandler, ClientEvent};
 
 /// High-level AirPlay 2 sender client.
@@ -148,6 +149,32 @@ impl AirPlayClient {
         self.emit_event(ClientEvent::Connected(device.clone())).await;
 
         Ok(())
+    }
+
+    /// Connect to a device with PIN (for password-protected devices).
+    pub async fn connect_with_pin_pairing(&mut self, device: &Device, pin: &str) -> Result<PersistentIdentity> {
+        // Disconnect existing connection if any
+        if self.connection.is_some() {
+            self.disconnect().await?;
+        }
+
+        // Use the user-provided stream config (don't override based on device features)
+        let stream_config = self.stream_config.clone();
+
+        // Establish connection
+        let (mut connection, persistent_identity) = Connection::connect_with_pin_pairing(device.clone(), stream_config, pin).await?;
+
+        // Set render delay for retransmit headroom
+        connection.set_render_delay_ms(self.render_delay_ms);
+
+        // Complete RTSP SETUP handshake (CRITICAL - required before streaming)
+        connection.setup().await?;
+
+        self.connection = Some(connection);
+
+        self.emit_event(ClientEvent::Connected(device.clone())).await;
+
+        Ok(persistent_identity)
     }
 
     /// Disconnect from current device and any group connections.
@@ -526,7 +553,7 @@ impl AirPlayClient {
         // Connect + pair all devices
         let mut connections: Vec<Connection> = Vec::new();
         for device in devices {
-            let conn = Connection::connect_auto(device.clone(), config.clone(), "3939").await?;
+            let conn = Connection::connect_with_pin(device.clone(), config.clone(), "3939").await?;
             connections.push(conn);
         }
 
