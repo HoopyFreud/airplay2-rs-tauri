@@ -177,6 +177,32 @@ impl AirPlayClient {
         Ok(persistent_identity)
     }
 
+    /// Connect to a device with a persistent identity.
+    pub async fn connect_with_persistent_identity(&mut self, device: &Device, persistent_id: &PersistentIdentity) -> Result<()> {
+        // Disconnect existing connection if any
+        if self.connection.is_some() {
+            self.disconnect().await?;
+        }
+
+        // Use the user-provided stream config (don't override based on device features)
+        let stream_config = self.stream_config.clone();
+
+        // Establish connection
+        let mut connection = Connection::connect_with_pair_verify(device.clone(), stream_config, persistent_id).await?;
+
+        // Set render delay for retransmit headroom
+        connection.set_render_delay_ms(self.render_delay_ms);
+
+        // Complete RTSP SETUP handshake (CRITICAL - required before streaming)
+        connection.setup().await?;
+
+        self.connection = Some(connection);
+
+        self.emit_event(ClientEvent::Connected(device.clone())).await;
+
+        Ok(())
+    }
+
     /// Disconnect from current device and any group connections.
     pub async fn disconnect(&mut self) -> Result<()> {
         // Stop group streamer if running

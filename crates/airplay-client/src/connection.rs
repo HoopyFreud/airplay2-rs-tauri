@@ -300,7 +300,7 @@ impl Connection {
     }
 
     /// Create connection using pair-verify with a persisted identity.
-    async fn connect_with_pair_verify(
+    pub async fn connect_with_pair_verify(
         device: Device,
         config: StreamConfig,
         persistent_id: &PersistentIdentity,
